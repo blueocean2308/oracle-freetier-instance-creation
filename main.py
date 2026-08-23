@@ -155,8 +155,11 @@ def list_all_instances(compartment_id):
     Returns:
         list: The list of instances returned from the OCI service.
     """
-    list_instances_response = compute_client.list_instances(compartment_id=compartment_id)
-    return list_instances_response.data
+    return execute_oci_command(
+        compute_client,
+        "list_instances",
+        compartment_id=compartment_id,
+    )
 
 
 def generate_html_body(instance):
@@ -277,17 +280,34 @@ def handle_errors(command, data, log):
     """
 
     # Check for temporary errors that can be retried
-    if "code" in data:
-        if (data["code"] in ("TooManyRequests", "Out of host capacity.", 'InternalError')) \
-                or (data["message"] in ("Out of host capacity.", "Bad Gateway")):
-            log.info("Command: %s--\nOutput: %s", command, data)
-            time.sleep(WAIT_TIME)
-            return True
+    retryable_codes = {
+        "TooManyRequests",
+        "Out of host capacity.",
+        "InternalError",
+        "RequestException",
+    }
+    retryable_statuses = {502, 503, 504}
+    retryable_messages = (
+        "Out of host capacity.",
+        "Bad Gateway",
+        "Max retries exceeded",
+        "ProxyError",
+        "Tunnel connection failed",
+        "Connection aborted",
+        "ConnectTimeout",
+        "Read timed out",
+    )
+    message = data.get("message", "")
 
-    if "status" in data and data["status"] == 502:
-        log.info("Command: %s~~\nOutput: %s", command, data)
+    if (
+        data.get("code") in retryable_codes
+        or data.get("status") in retryable_statuses
+        or any(retry_msg in message for retry_msg in retryable_messages)
+    ):
+        log.info("Command: %s--\nOutput: %s", command, data)
         time.sleep(WAIT_TIME)
         return True
+
     failure_msg = '\n'.join([f'{key}: {value}' for key, value in data.items()])
     notify_on_failure(failure_msg)
     # Raise an exception for unexpected errors
@@ -318,6 +338,13 @@ def execute_oci_command(client, method, *args, **kwargs):
             data = {"status": srv_err.status,
                     "code": srv_err.code,
                     "message": srv_err.message}
+            handle_errors(args, data, logging_step5)
+        except oci.exceptions.RequestException as req_err:
+            data = {
+                "status": None,
+                "code": "RequestException",
+                "message": str(req_err),
+            }
             handle_errors(args, data, logging_step5)
 
 
@@ -479,6 +506,13 @@ def launch_instance():
                 "status": srv_err.status,
                 "code": srv_err.code,
                 "message": srv_err.message,
+            }
+            handle_errors("launch_instance", data, logging_step5)
+        except oci.exceptions.RequestException as req_err:
+            data = {
+                "status": None,
+                "code": "RequestException",
+                "message": str(req_err),
             }
             handle_errors("launch_instance", data, logging_step5)
 

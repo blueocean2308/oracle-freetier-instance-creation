@@ -10,9 +10,14 @@ fi
 # Making environment non-interactive
 export DEBIAN_FRONTEND=noninteractive
 
+is_debian_or_ubuntu() {
+    [ -f /etc/os-release ] && . /etc/os-release && \
+        { [ "$ID" = "debian" ] || [ "$ID" = "ubuntu" ] || [[ " $ID_LIKE " == *" debian "* ]]; }
+}
+
 # Check if the argument is 'rerun'
 if [ "$1" != "rerun" ]; then
-    if type apt >/dev/null 2>&1; then
+    if is_debian_or_ubuntu && command -v apt >/dev/null 2>&1; then
         # Update package lists and install required packages without confirmation
         sudo apt update -y
         sudo apt install python3-venv -y
@@ -53,8 +58,8 @@ send_notification() {
   fi
 }
 
-# Add this near the top of the script, after the send_notification function is defined
-trap 'send_notification "🛑 The setup_init.sh script has been terminated."' EXIT
+NORMAL_EXIT=0
+trap 'if [ "$NORMAL_EXIT" -ne 1 ]; then send_notification "🛑 The setup_init.sh script has been terminated."; fi' EXIT
 
 # Load environment variables
 source oci.env
@@ -77,8 +82,11 @@ handle_suspend() {
 trap cleanup SIGINT SIGTERM
 trap handle_suspend SIGTSTP
 
-# Run the Python program in the background
-nohup python3 main.py > /dev/null 2>&1 &
+PYTHON_ERROR_LOG="python_error.log"
+SCRIPT_FAILED=0
+
+# Run the Python program in the background. Keep stdout/stderr so crashes are diagnosable.
+python3 main.py > "$PYTHON_ERROR_LOG" 2>&1 < /dev/null &
 
 # Store the PID of the background process
 SCRIPT_PID=$!
@@ -109,6 +117,10 @@ else
     if [ -s "launch_instance.log" ]; then
         echo "Script is running successfully"
         send_notification "👍 Good news! The script is up and running after a short delay."
+    elif ! is_script_running; then
+        echo "Python process exited before launch_instance.log was written. Check $PYTHON_ERROR_LOG"
+        send_notification "😱 The OCI script exited before writing launch_instance.log. Check $PYTHON_ERROR_LOG."
+        SCRIPT_FAILED=1
     else
         echo "Unhandled Exception Occurred."
         send_notification "😱 Yikes! An unhandled exception occurred. Time to put on the detective hat!"
@@ -120,10 +132,16 @@ while is_script_running; do
     sleep 60
 done
 
-send_notification "🏁 The OCI Instance Creation Script has finished running."
+if [ "$SCRIPT_FAILED" -ne 1 ]; then
+    send_notification "🏁 The OCI Instance Creation Script has finished running."
+fi
 
 # Deactivate the virtual environment
 deactivate
 
 # Exit the script
+NORMAL_EXIT=1
+if [ "$SCRIPT_FAILED" -eq 1 ]; then
+    exit 1
+fi
 exit 0

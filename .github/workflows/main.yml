@@ -21,7 +21,7 @@ jobs:
           python -m pip install --upgrade pip
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
 
-      - name: Setup OCI config & key
+      - name: Setup OCI config, key & SSH
         env:
           OCI_USER_OCID: ${{ secrets.OCI_USER_OCID }}
           OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
@@ -32,10 +32,13 @@ jobs:
           OCI_IMAGE_ID: ${{ secrets.OCI_IMAGE_ID }}
         run: |
           mkdir -p ~/.oci
+          mkdir -p ~/.ssh
 
+          # === OCI Private Key ===
           echo "$OCI_KEY_FILE" > ~/.oci/oci_api_key.pem
           chmod 600 ~/.oci/oci_api_key.pem
 
+          # === OCI Config ===
           cat > ~/.oci/config << EOF
           [DEFAULT]
           user=${OCI_USER_OCID}
@@ -46,26 +49,26 @@ jobs:
           EOF
           chmod 600 ~/.oci/config
 
+          # === Tạo đường dẫn hardcode ===
           sudo mkdir -p /home/ubuntu/oracle-freetier-instance-creation
           sudo chown -R $USER:$USER /home/ubuntu
 
-          cat > /home/ubuntu/oracle-freetier-instance-creation/oci_config << EOF
-          [DEFAULT]
-          user=${OCI_USER_OCID}
-          fingerprint=${OCI_FINGERPRINT}
-          tenancy=${OCI_TENANCY_OCID}
-          region=${OCI_REGION}
-          key_file=~/.oci/oci_api_key.pem
-          EOF
-
+          cp ~/.oci/config /home/ubuntu/oracle-freetier-instance-creation/oci_config
           cp ~/.oci/oci_api_key.pem /home/ubuntu/oracle-freetier-instance-creation/oci_api_key.pem
           chmod 600 /home/ubuntu/oracle-freetier-instance-creation/*
 
-          # Tạo oci.env đầy đủ
+          # === Generate SSH key pair ===
+          ssh-keygen -t rsa -b 2048 -f ~/.ssh/id_rsa -N "" -q
+          cp ~/.ssh/id_rsa.pub /home/ubuntu/oracle-freetier-instance-creation/id_rsa.pub
+          cp ~/.ssh/id_rsa /home/ubuntu/oracle-freetier-instance-creation/id_rsa
+          chmod 600 /home/ubuntu/oracle-freetier-instance-creation/id_rsa*
+
+          # === oci.env ===
           cat > oci.env << EOF
           OCI_CONFIG=/home/ubuntu/oracle-freetier-instance-creation/oci_config
           OCI_SUBNET_ID=${OCI_SUBNET_ID}
           OCI_IMAGE_ID=${OCI_IMAGE_ID}
+          SSH_AUTHORIZED_KEYS_FILE=/home/ubuntu/oracle-freetier-instance-creation/id_rsa.pub
           OCT_FREE_AD=AD-1,AD-2,AD-3
           DISPLAY_NAME=oracle-free-arm
           OCI_COMPUTE_SHAPE=VM.Standard.A1.Flex
@@ -79,6 +82,9 @@ jobs:
           cp oci.env /home/ubuntu/oracle-freetier-instance-creation/oci.env
 
           echo "=== Setup done ==="
+          echo "SSH Public Key:"
+          cat ~/.ssh/id_rsa.pub
+          echo "---"
           cat oci.env
 
       - name: Run creation script

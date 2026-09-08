@@ -21,7 +21,7 @@ jobs:
           python -m pip install --upgrade pip
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
 
-      - name: Run creation script
+      - name: Setup OCI config & key
         env:
           OCI_USER_OCID: ${{ secrets.OCI_USER_OCID }}
           OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
@@ -30,7 +30,38 @@ jobs:
           OCI_KEY_FILE: ${{ secrets.OCI_KEY_FILE }}
         run: |
           mkdir -p ~/.oci
+          mkdir -p /home/ubuntu/oracle-freetier-instance-creation
+
+          # Tạo private key
           echo "$OCI_KEY_FILE" > ~/.oci/oci_api_key.pem
           chmod 600 ~/.oci/oci_api_key.pem
+
+          # Tạo config file ở ~/.oci/config
+          cat > ~/.oci/config << EOF
+          [DEFAULT]
+          user=${OCI_USER_OCID}
+          fingerprint=${OCI_FINGERPRINT}
+          tenancy=${OCI_TENANCY_OCID}
+          region=${OCI_REGION}
+          key_file=~/.oci/oci_api_key.pem
+          EOF
+
+          # Tạo thêm file config đúng đường dẫn mà script đang tìm
+          cat > /home/ubuntu/oracle-freetier-instance-creation/oci_config << EOF
+          [DEFAULT]
+          user=${OCI_USER_OCID}
+          fingerprint=${OCI_FINGERPRINT}
+          tenancy=${OCI_TENANCY_OCID}
+          region=${OCI_REGION}
+          key_file=~/.oci/oci_api_key.pem
+          EOF
+
+          # Copy key sang đường dẫn script hay dùng
+          cp ~/.oci/oci_api_key.pem /home/ubuntu/oracle-freetier-instance-creation/oci_api_key.pem
+          chmod 600 /home/ubuntu/oracle-freetier-instance-creation/oci_api_key.pem
+
+          echo "OCI config created successfully"
+
+      - name: Run creation script
+        run: |
           python main.py
-          

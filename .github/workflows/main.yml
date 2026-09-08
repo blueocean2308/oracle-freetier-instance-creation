@@ -30,13 +30,12 @@ jobs:
           OCI_KEY_FILE: ${{ secrets.OCI_KEY_FILE }}
         run: |
           mkdir -p ~/.oci
-          mkdir -p /home/ubuntu/oracle-freetier-instance-creation
 
           # Tạo private key
           echo "$OCI_KEY_FILE" > ~/.oci/oci_api_key.pem
           chmod 600 ~/.oci/oci_api_key.pem
 
-          # Tạo config file ở ~/.oci/config
+          # Tạo config chuẩn ở ~/.oci/config
           cat > ~/.oci/config << EOF
           [DEFAULT]
           user=${OCI_USER_OCID}
@@ -45,8 +44,13 @@ jobs:
           region=${OCI_REGION}
           key_file=~/.oci/oci_api_key.pem
           EOF
+          chmod 600 ~/.oci/config
 
-          # Tạo thêm file config đúng đường dẫn mà script đang tìm
+          # Tạo thư mục giả lập đường dẫn script đang hardcode
+          sudo mkdir -p /home/ubuntu/oracle-freetier-instance-creation
+          sudo chown -R $USER:$USER /home/ubuntu
+
+          # Tạo file config đúng đường dẫn script tìm
           cat > /home/ubuntu/oracle-freetier-instance-creation/oci_config << EOF
           [DEFAULT]
           user=${OCI_USER_OCID}
@@ -56,11 +60,14 @@ jobs:
           key_file=~/.oci/oci_api_key.pem
           EOF
 
-          # Copy key sang đường dẫn script hay dùng
+          # Copy key sang đó luôn
           cp ~/.oci/oci_api_key.pem /home/ubuntu/oracle-freetier-instance-creation/oci_api_key.pem
           chmod 600 /home/ubuntu/oracle-freetier-instance-creation/oci_api_key.pem
+          chmod 600 /home/ubuntu/oracle-freetier-instance-creation/oci_config
 
           echo "OCI config created successfully"
+          ls -la /home/ubuntu/oracle-freetier-instance-creation/
+          ls -la ~/.oci/
 
       - name: Run creation script
         run: |

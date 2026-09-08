@@ -3,8 +3,7 @@ name: Oracle Auto Instance Creation
 on:
   workflow_dispatch:
   schedule:
-    - cron: '*/10 * * * *
-
+    - cron: "*/10 * * * *"
 jobs:
   build:
     runs-on: ubuntu-latest

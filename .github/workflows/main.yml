@@ -29,14 +29,13 @@ jobs:
           OCI_REGION: ${{ secrets.OCI_REGION }}
           OCI_KEY_FILE: ${{ secrets.OCI_KEY_FILE }}
           OCI_SUBNET_ID: ${{ secrets.OCI_SUBNET_ID }}
+          OCI_IMAGE_ID: ${{ secrets.OCI_IMAGE_ID }}
         run: |
           mkdir -p ~/.oci
 
-          # Tạo private key
           echo "$OCI_KEY_FILE" > ~/.oci/oci_api_key.pem
           chmod 600 ~/.oci/oci_api_key.pem
 
-          # Tạo config chuẩn
           cat > ~/.oci/config << EOF
           [DEFAULT]
           user=${OCI_USER_OCID}
@@ -47,7 +46,6 @@ jobs:
           EOF
           chmod 600 ~/.oci/config
 
-          # Tạo đường dẫn hardcode của script
           sudo mkdir -p /home/ubuntu/oracle-freetier-instance-creation
           sudo chown -R $USER:$USER /home/ubuntu
 
@@ -61,31 +59,31 @@ jobs:
           EOF
 
           cp ~/.oci/oci_api_key.pem /home/ubuntu/oracle-freetier-instance-creation/oci_api_key.pem
-          chmod 600 /home/ubuntu/oracle-freetier-instance-creation/oci_api_key.pem
-          chmod 600 /home/ubuntu/oracle-freetier-instance-creation/oci_config
+          chmod 600 /home/ubuntu/oracle-freetier-instance-creation/*
 
-          # Tạo file oci.env (nhiều script dùng cái này)
+          # Tạo oci.env đầy đủ
           cat > oci.env << EOF
           OCI_CONFIG=/home/ubuntu/oracle-freetier-instance-creation/oci_config
           OCI_SUBNET_ID=${OCI_SUBNET_ID}
+          OCI_IMAGE_ID=${OCI_IMAGE_ID}
           OCT_FREE_AD=AD-1,AD-2,AD-3
           DISPLAY_NAME=oracle-free-arm
           OCI_COMPUTE_SHAPE=VM.Standard.A1.Flex
           REQUEST_WAIT_TIME_SECS=60
           ASSIGN_PUBLIC_IP=true
           BOOT_VOLUME_SIZE=50
+          OPERATING_SYSTEM=Canonical Ubuntu
+          OS_VERSION=22.04
           EOF
 
-          # Copy oci.env sang đường dẫn script hay dùng
           cp oci.env /home/ubuntu/oracle-freetier-instance-creation/oci.env
 
           echo "=== Setup done ==="
-          cat ~/.oci/config
-          echo "---"
           cat oci.env
 
       - name: Run creation script
         env:
           OCI_SUBNET_ID: ${{ secrets.OCI_SUBNET_ID }}
+          OCI_IMAGE_ID: ${{ secrets.OCI_IMAGE_ID }}
         run: |
           python main.py

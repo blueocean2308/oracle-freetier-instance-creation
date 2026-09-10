@@ -3,7 +3,11 @@ name: Oracle Auto Instance Creation
 on:
   workflow_dispatch: {}
   schedule:
-    - cron: '*/15 * * * *'
+    - cron: '*/30 * * * *'
+
+concurrency:
+  group: oracle-instance-creation
+  cancel-in-progress: false
 
 jobs:
   build:
@@ -34,11 +38,9 @@ jobs:
           mkdir -p ~/.oci
           mkdir -p ~/.ssh
 
-          # === OCI Private Key ===
           echo "$OCI_KEY_FILE" > ~/.oci/oci_api_key.pem
           chmod 600 ~/.oci/oci_api_key.pem
 
-          # === OCI Config ===
           cat > ~/.oci/config << EOF
           [DEFAULT]
           user=${OCI_USER_OCID}
@@ -49,7 +51,6 @@ jobs:
           EOF
           chmod 600 ~/.oci/config
 
-          # === Tạo đường dẫn hardcode ===
           sudo mkdir -p /home/ubuntu/oracle-freetier-instance-creation
           sudo chown -R $USER:$USER /home/ubuntu
 
@@ -57,13 +58,11 @@ jobs:
           cp ~/.oci/oci_api_key.pem /home/ubuntu/oracle-freetier-instance-creation/oci_api_key.pem
           chmod 600 /home/ubuntu/oracle-freetier-instance-creation/*
 
-          # === Generate SSH key pair ===
           ssh-keygen -t rsa -b 2048 -f ~/.ssh/id_rsa -N "" -q
           cp ~/.ssh/id_rsa.pub /home/ubuntu/oracle-freetier-instance-creation/id_rsa.pub
           cp ~/.ssh/id_rsa /home/ubuntu/oracle-freetier-instance-creation/id_rsa
           chmod 600 /home/ubuntu/oracle-freetier-instance-creation/id_rsa*
 
-          # === oci.env ===
           cat > oci.env << EOF
           OCI_CONFIG=/home/ubuntu/oracle-freetier-instance-creation/oci_config
           OCI_SUBNET_ID=${OCI_SUBNET_ID}
@@ -72,7 +71,7 @@ jobs:
           OCT_FREE_AD=AD-1,AD-2,AD-3
           DISPLAY_NAME=oracle-free-arm
           OCI_COMPUTE_SHAPE=VM.Standard.A1.Flex
-          REQUEST_WAIT_TIME_SECS=60
+          REQUEST_WAIT_TIME_SECS=120
           ASSIGN_PUBLIC_IP=true
           BOOT_VOLUME_SIZE=50
           OPERATING_SYSTEM=Canonical Ubuntu
@@ -82,14 +81,38 @@ jobs:
           cp oci.env /home/ubuntu/oracle-freetier-instance-creation/oci.env
 
           echo "=== Setup done ==="
-          echo "SSH Public Key:"
-          cat ~/.ssh/id_rsa.pub
-          echo "---"
           cat oci.env
 
       - name: Run creation script
+        id: create
+        continue-on-error: true
         env:
           OCI_SUBNET_ID: ${{ secrets.OCI_SUBNET_ID }}
           OCI_IMAGE_ID: ${{ secrets.OCI_IMAGE_ID }}
+          PYTHONUNBUFFERED: "1"
         run: |
           python main.py
+
+      - name: Notify Telegram
+        if: always()
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          if [ -z "$TELEGRAM_BOT_TOKEN" ] || [ -z "$TELEGRAM_CHAT_ID" ]; then
+            echo "Telegram secrets not set, skip"
+            exit 0
+          fi
+
+          if [ -f INSTANCE_CREATED ]; then
+            MSG=$(printf 'Oracle Free Tier: TAO INSTANCE THANH CONG\nShape: VM.Standard.A1.Flex\nXem Oracle Console de lay IP public.')
+          elif [ -f UNHANDLED_ERROR.log ]; then
+            MSG="Oracle script gap loi that. Mo GitHub Actions de xem log."
+          else
+            echo "Still hunting (out of capacity), skip telegram"
+            exit 0
+          fi
+
+          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -d chat_id="${TELEGRAM_CHAT_ID}" \
+            --data-urlencode "text=${MSG}" || true

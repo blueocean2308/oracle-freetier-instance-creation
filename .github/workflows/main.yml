@@ -7,11 +7,12 @@ on:
 
 concurrency:
   group: oracle-instance-creation
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 350
     steps:
       - uses: actions/checkout@v4
 
